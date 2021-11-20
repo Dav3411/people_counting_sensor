@@ -19,12 +19,11 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "vl53l1_platform.h"
-#include "VL53L1X_api.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "vl53l1_platform.h"
+#include "vl53l1_api.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -49,9 +48,10 @@ UART_HandleTypeDef huart1;
 PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
-VL53L1_Dev_t dev;
-VL53L1_DEV Dev = &dev;
-int Status=0;
+VL53L1_Dev_t      dev;
+VL53L1_DEV        Dev = &dev;
+VL53L1_CalibrationData_t Calibration_Data;
+int status=0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -66,11 +66,26 @@ static void MX_I2C1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+// IIC Write Command**********************************************/
+void Write_IIC_Command(unsigned char IIC_Command)
+{
+	HAL_I2C_Mem_Write(&hi2c1 ,0x78,0x00,I2C_MEMADD_SIZE_8BIT,&IIC_Command,1,0x100);
+}
+
+// IIC Write Data*************************************************/
+void Write_IIC_Data(unsigned char IIC_Data)
+{
+	HAL_I2C_Mem_Write(&hi2c1 ,0x78,0x40,I2C_MEMADD_SIZE_8BIT,&IIC_Data,1,0x100);
+}
+
+// using printf with uart
 int __io_putchar(int ch)
 {
      HAL_UART_Transmit(&huart1, (uint8_t*) &ch, 1, 0xFFFF);
      return ch;
 }
+
 /* USER CODE END 0 */
 
 /**
@@ -80,13 +95,12 @@ int __io_putchar(int ch)
 int main(void)
 {
   /* USER CODE BEGIN 1 */
+  static VL53L1_RangingMeasurementData_t RangingData;
+  VL53L1_UserRoi_t roiConfig;
   uint8_t byteData;
-  uint8_t dataReady;
-  uint8_t state = 1;
-  uint32_t interms = 100;
-  int16_t offsetvalue = 0;
   uint16_t dist = 0;
-  uint8_t rangestatus;
+  int16_t distance=0;
+  uint16_t print_count = 0;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -112,45 +126,81 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
-  Status = VL53L1_RdByte(Dev, 0x010F, &byteData);
-  printf("VL53L1X Model_ID: %x\r\n", byteData);
-  HAL_Delay(500);
-  Status = VL53L1_RdByte(Dev, 0x0110, &byteData);
-  printf("VL53L1X Module_Type: %x\r\n", byteData);
-  HAL_Delay(500);
+	printf("VL53L1X Examples...\r\n");
+	Dev->I2cHandle = &hi2c1;
+	Dev->I2cDevAddr = 0x52;
+	Dev->comms_type = 1;
+	Dev->comms_speed_khz = 400;
+
+	status = VL53L1_RdByte(Dev, 0x010F, &byteData);
+	printf("VL53L1X Model_ID: %x\r\n", byteData);
+	HAL_Delay(500);
+	status = VL53L1_RdByte(Dev, 0x0110, &byteData);
+	printf("VL53L1X Module_Type: %x\r\n", byteData);
+	HAL_Delay(500);
 
 
-  while(state){
-  Status = VL53L1X_BootState(Dev, &state);
-  HAL_Delay(2);
-  }
-  /* Sensor Initialization */
-  Status = VL53L1X_SensorInit(Dev);
-  /* Modify the default configuration */
-  Status = VL53L1X_SetInterMeasurementInMs(Dev, interms);
-  //Status = VL53L1X_SetOffset(Dev, offsetvalue);
-  /* enable the ranging*/
-  Status = VL53L1X_StartRanging(Dev);
+	printf("Autonomous Ranging Test\r\n");
+	HAL_Delay(500);
+	status = VL53L1_WaitDeviceBooted(Dev);
+	status = VL53L1_DataInit(Dev);
+	status = VL53L1_StaticInit(Dev);
+	roiConfig.TopLeftX = 0;
+	roiConfig.TopLeftY = 15;
+	roiConfig.BotRightX = 15;
+	roiConfig.BotRightY = 0;
+	status = VL53L1_SetUserROI(Dev,&roiConfig);
 
-//  Status = VL53L1X_SetDistanceMode(Dev, dm);
+	status = VL53L1_GetCalibrationData(Dev, &Calibration_Data);
+	Calibration_Data.customer.algo__crosstalk_compensation_plane_offset_kcps = 2000;
+	Calibration_Data.customer.algo__part_to_part_range_offset_mm = 156;
+	Calibration_Data.customer.global_config__spad_enables_ref_0 = 255;
+	Calibration_Data.customer.global_config__spad_enables_ref_1 = 255;
+	Calibration_Data.customer.global_config__spad_enables_ref_2 = 255;
+	Calibration_Data.customer.global_config__spad_enables_ref_3 = 255;
+	Calibration_Data.customer.global_config__spad_enables_ref_4 = 255;
+	Calibration_Data.customer.global_config__spad_enables_ref_5 = 255;
+	Calibration_Data.customer.ref_spad_man__num_requested_ref_spads = 8;
+	Calibration_Data.customer.ref_spad_man__ref_location = 1;
+	status = VL53L1_SetCalibrationData(Dev, &Calibration_Data);
 
-//  Status = VL53L1X_GetDistanceMode(Dev,&dm1);
-//  printf("test %d\r",dm1);
+
+
+	status = VL53L1_SetDistanceMode(Dev, VL53L1_DISTANCEMODE_LONG);
+	status = VL53L1_SetMeasurementTimingBudgetMicroSeconds(Dev, 50000);
+	status = VL53L1_SetInterMeasurementPeriodMilliSeconds(Dev, 10);
+	status = VL53L1_StartMeasurement(Dev);
+
+
+	if(status){
+		printf("VL53L1_StartMeasurement failed \n");
+		while(1);
+	}
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1){
-    while(dataReady==0){
-	  Status = VL53L1X_CheckForDataReady(Dev, &dataReady);
-    }
-	dataReady = 0;
-	Status = VL53L1X_GetRangeStatus(Dev, &rangestatus);
-	Status = VL53L1X_GetDistance(Dev, &dist);
-	Status = VL53L1X_ClearInterrupt(Dev);
+	  status = VL53L1_WaitMeasurementDataReady(Dev);
+	 			if(!status)
+	 			{
+	 				status = VL53L1_GetRangingMeasurementData(Dev, &RangingData);
+	 				if(status==0){
+	 					//SerialPlotFramePlotWord(RangingData.RangeMilliMeter,RangingData.RangeMilliMeter);
+	 					distance = distance * 0.8f + RangingData.RangeMilliMeter * 0.2f;
+	 					if(print_count++ >= 10)
+	 					{
+	 						print_count = 0;
+	 						printf("distance : %d.%d cm\r\n",(distance/10)+2, distance%10);
+	 //						SerialPlotFramePlotWord(distance,distance);
+	 					}
 
-	printf("status = %u dis = %u\r\n",rangestatus, dist);
+	 //					printf("%d\r\n", RangingData.RangeMilliMeter);
+	 				}
+	 				status = VL53L1_ClearInterruptAndStartMeasurement(Dev);
+	 			}
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -256,7 +306,7 @@ static void MX_I2C1_Init(void)
 
   /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x00707CBB;
+  hi2c1.Init.Timing = 0x00300F38;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -383,7 +433,17 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(vl53l1x_gpio_GPIO_Port, vl53l1x_gpio_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LD2_Pin|LD3_Pin|LD1_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : vl53l1x_gpio_Pin */
+  GPIO_InitStruct.Pin = vl53l1x_gpio_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(vl53l1x_gpio_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -407,6 +467,7 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
 
 /* USER CODE END 4 */
 

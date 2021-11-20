@@ -58,6 +58,8 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define vl53l1x_gpio_Pin GPIO_PIN_0
+#define vl53l1x_gpio_GPIO_Port GPIOA
 #define B1_Pin GPIO_PIN_4
 #define B1_GPIO_Port GPIOC
 #define LD2_Pin GPIO_PIN_0
@@ -81,7 +83,7 @@ void Error_Handler(void);
 #define STLINK_TX_Pin GPIO_PIN_7
 #define STLINK_TX_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
-
+extern I2C_HandleTypeDef  hi2c1;
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus
