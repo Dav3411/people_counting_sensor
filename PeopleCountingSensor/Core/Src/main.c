@@ -86,6 +86,7 @@ int __io_putchar(int ch)
      return ch;
 }
 
+
 /* USER CODE END 0 */
 
 /**
@@ -98,8 +99,11 @@ int main(void)
   static VL53L1_RangingMeasurementData_t RangingData;
   VL53L1_UserRoi_t roiConfig;
   uint8_t byteData;
-  uint16_t dist = 0;
-  int16_t distance=0;
+  int16_t distance = 0;
+  int16_t previousData = 0;
+  int8_t peopleCnt = 0;
+  int distCompare = 0;
+
   uint16_t print_count = 0;
   /* USER CODE END 1 */
 
@@ -126,7 +130,6 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
-	printf("VL53L1X Examples...\r\n");
 	Dev->I2cHandle = &hi2c1;
 	Dev->I2cDevAddr = 0x52;
 	Dev->comms_type = 1;
@@ -189,14 +192,42 @@ int main(void)
 	 				if(status==0){
 	 					//SerialPlotFramePlotWord(RangingData.RangeMilliMeter,RangingData.RangeMilliMeter);
 	 					distance = distance * 0.8f + RangingData.RangeMilliMeter * 0.2f;
+
 	 					if(print_count++ >= 10)
 	 					{
 	 						print_count = 0;
-	 						printf("distance : %d.%d cm\r\n",(distance/10)+2, distance%10);
+	 //						printf("distance : %d.%d cm\r\n",(distance/10)+2, distance%10);
 	 //						SerialPlotFramePlotWord(distance,distance);
 	 					}
 
-	 //					printf("%d\r\n", RangingData.RangeMilliMeter);
+	 					if(distCompare > 8 && RangingData.RangeMilliMeter>previousData)
+	 					{
+	 						peopleCnt++;
+	 						printf("people : %d distCompare : %d\r\n",peopleCnt, distCompare);
+	 						distCompare = 0;
+	 					}
+	 					else if(distCompare < -8& RangingData.RangeMilliMeter<previousData)
+	 					{
+	 						peopleCnt--;
+	 						printf("people : %d distCompare : %d\r\n",peopleCnt, distCompare);
+	 						distCompare = 0;
+	 					}
+	 					else
+	 					{
+	 						if(RangingData.RangeMilliMeter<previousData && distCompare>=0){
+	 							distCompare++;
+	 						}
+	 						else if(RangingData.RangeMilliMeter>previousData && distCompare<=0){
+	 							distCompare--;
+	 						}
+	 						else
+	 							distCompare = 0;
+	 					}
+
+	 					previousData = RangingData.RangeMilliMeter;
+
+	 					//printf("distance : %d.%d cm rangedata : %d\r\n",(distance/10)+2, distance%10,RangingData.RangeMilliMeter);
+
 	 				}
 	 				status = VL53L1_ClearInterruptAndStartMeasurement(Dev);
 	 			}
